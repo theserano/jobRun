@@ -1,35 +1,129 @@
-import { useState } from 'react';
-import reactLogo from '@/assets/react.svg';
-import wxtLogo from '/wxt.svg';
-import './App.css';
+import { useState } from "react";
+import "./App.css";
 
-function App() {
-  const [count, setCount] = useState(0);
+type Stage = "SAVED" | "APPLIED" | "INTERVIEWING" | "OFFER";
 
-  return (
-    <>
-      <div>
-        <a href="https://wxt.dev" target="_blank">
-          <img src={wxtLogo} className="logo" alt="WXT logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>WXT + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the WXT and React logos to learn more
-      </p>
-    </>
-  );
+interface Application {
+  id: string;
+  company: string;
+  role: string;
+  url: string;
+  stage: Stage;
+  savedAt: string; // ISO date
 }
 
-export default App;
+const STAGES: { key: Stage; label: string }[] = [
+  { key: "SAVED", label: "Saved" },
+  { key: "APPLIED", label: "Applied" },
+  { key: "INTERVIEWING", label: "Interviewing" },
+  { key: "OFFER", label: "Offer" },
+];
+
+function daysAgo(n: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString();
+}
+
+function formatRelative(iso: string): string {
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const days = Math.round(diffMs / (1000 * 60 * 60 * 24));
+  if (days <= 0) return "today";
+  if (days === 1) return "1 day ago";
+  return `${days} days ago`;
+}
+
+export default function App() {
+  const [applications, setApplications] = useState<Application[]>([]);
+  const [activeStage, setActiveStage] = useState<Stage>("APPLIED");
+  const [isSaving, setIsSaving] = useState(false);
+
+  const visible = applications.filter((a) => a.stage === activeStage);
+  const inMotionCount = applications.filter((a) => a.stage !== "OFFER").length;
+
+  function handleSaveCurrentPage() {
+    setIsSaving(true);
+    // Real implementation: read the active tab via chrome.tabs.query,
+    // then insert a row into Supabase for the signed-in user.
+    setTimeout(() => {
+      const newEntry: Application = {
+        id: crypto.randomUUID(),
+        company: "New company",
+        role: document.title || "Untitled role",
+        url: window.location.href,
+        stage: "SAVED",
+        savedAt: new Date().toISOString(),
+      };
+      setApplications((prev) => [newEntry, ...prev]);
+      setActiveStage("SAVED");
+      setIsSaving(false);
+    }, 500);
+  }
+
+  return (
+    <div className="app">
+      <header className="app__header">
+        <div className="app__brand">
+          <span className="app__brand-dot" />
+          JobRun
+        </div>
+        <button className="app__icon-button" aria-label="Settings" title="Settings">
+          <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5">
+            <circle cx="10" cy="10" r="2.5" />
+            <path d="M10 2.5v2M10 15.5v2M17.5 10h-2M4.5 10h-2M15.1 4.9l-1.4 1.4M6.3 13.7l-1.4 1.4M15.1 15.1l-1.4-1.4M6.3 6.3 4.9 4.9" />
+          </svg>
+        </button>
+      </header>
+
+      <section className="app__hero">
+        <p className="app__hero-number">{inMotionCount}</p>
+        <p className="app__hero-label">applications in motion</p>
+      </section>
+
+      <button className="app__save-button" onClick={handleSaveCurrentPage} disabled={isSaving}>
+        {isSaving ? "Saving…" : "Save this page"}
+        <span className="app__save-plus" aria-hidden="true">
+          +
+        </span>
+      </button>
+
+      <nav className="app__stages" aria-label="Application stage">
+        {STAGES.map((s) => {
+          const count = applications.filter((a) => a.stage === s.key).length;
+          return (
+            <button
+              key={s.key}
+              className={"app__stage" + (activeStage === s.key ? " app__stage--active" : "")}
+              onClick={() => setActiveStage(s.key)}
+            >
+              {s.label}
+              <span className="app__stage-count">{count}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      <ul className="app__list">
+        {visible.length === 0 && (
+          <li className="app__empty">
+            Nothing here yet. Save a posting to add it to {STAGES.find((s) => s.key === activeStage)?.label.toLowerCase()}.
+          </li>
+        )}
+        {visible.map((a) => (
+          <li key={a.id} className={`app__row app__row--${a.stage}`}>
+            <div className="app__row-main">
+              <p className="app__row-company">{a.company}</p>
+              <p className="app__row-role">{a.role}</p>
+            </div>
+            <p className="app__row-time">{formatRelative(a.savedAt)}</p>
+          </li>
+        ))}
+      </ul>
+
+      <footer className="app__footer">
+        <span className="app__sync-dot" />
+        Synced just now
+      </footer>
+    </div>
+  );
+}

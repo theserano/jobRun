@@ -1,42 +1,265 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+
+:root {
+  --color-bg: #f7f8fa;
+  --color-ink: #14181f;
+  --color-ink-soft: #5b6472;
+  --color-border: #e4e7ec;
+  --color-primary: #1f6f5c;
+  --color-primary-dark: #185947;
+  --color-primary-soft: #e4f0ec;
+  --color-amber: #e2a63b;
+  --color-slate: #5b7fa6;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+}
+
+.app {
+  width: 360px;
+  max-height: 560px;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.app__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 0;
+}
+
+.app__brand {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+.app__brand-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+.app__icon-button {
+  border: none;
+  background: transparent;
+  color: var(--color-ink-soft);
+  padding: 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+}
+
+.app__icon-button:hover {
+  background: var(--color-border);
+  color: var(--color-ink);
+}
+
+.app__hero {
+  padding: 6px 18px 14px;
+}
+
+.app__hero-number {
+  font-family: "Fraunces", serif;
+  font-weight: 600;
+  font-size: 44px;
+  line-height: 1;
+  margin: 0;
+  color: var(--color-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.app__hero-label {
+  margin: 4px 0 0;
+  color: var(--color-ink-soft);
+  font-size: 12.5px;
+}
+
+.app__save-button {
+  margin: 0 18px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: 9px;
+  padding: 11px 14px;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.app__save-button:hover:not(:disabled) {
+  background: var(--color-primary-dark);
+}
+
+.app__save-button:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.app__save-plus {
+  font-size: 15px;
+  line-height: 1;
+}
+
+.app__stages {
+  display: flex;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--color-border);
+  gap: 4px;
+}
+
+.app__stage {
+  border: none;
+  background: transparent;
+  padding: 8px 4px 10px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--color-ink-soft);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  flex: 1;
+}
+
+.app__stage--active {
+  color: var(--color-ink);
+  border-bottom-color: var(--color-primary);
+}
+
+.app__stage-count {
+  font-size: 11px;
+  color: var(--color-ink-soft);
+  background: var(--color-border);
+  border-radius: 20px;
+  padding: 1px 6px;
+  min-width: 16px;
   text-align: center;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #54bc4ae0);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.app__stage--active .app__stage-count {
+  background: var(--color-primary-soft);
+  color: var(--color-primary);
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+.app__list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 18px 8px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 120px;
+}
+
+.app__row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 0 11px 12px;
+  border-bottom: 1px solid var(--color-border);
+  border-left: 2.5px solid transparent;
+}
+
+.app__row:last-child {
+  border-bottom: none;
+}
+
+.app__row--saved {
+  border-left-color: var(--color-slate);
+}
+
+.app__row--applied {
+  border-left-color: var(--color-ink-soft);
+}
+
+.app__row--interviewing {
+  border-left-color: var(--color-amber);
+}
+
+.app__row--offer {
+  border-left-color: var(--color-primary);
+}
+
+.app__row-company {
+  margin: 0;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.app__row-role {
+  margin: 2px 0 0;
+  color: var(--color-ink-soft);
+  font-size: 12px;
+}
+
+.app__row-time {
+  margin: 0;
+  color: var(--color-ink-soft);
+  font-size: 11.5px;
+  white-space: nowrap;
+  padding-top: 1px;
+}
+
+.app__empty {
+  padding: 24px 4px;
+  text-align: center;
+  color: var(--color-ink-soft);
+  font-size: 12.5px;
+}
+
+.app__footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--color-border);
+  color: var(--color-ink-soft);
+  font-size: 11.5px;
+}
+
+.app__sync-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+.app__save-button:focus-visible,
+.app__stage:focus-visible,
+.app__icon-button:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app__save-button {
+    transition: none;
   }
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
-}
-
-.card {
-  padding: 2em;
-}
-
-.read-the-docs {
-  color: #888;
 }
