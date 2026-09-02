@@ -7,12 +7,12 @@ import google from "../../assets/google.svg";
 type Stage = "SAVED" | "APPLIED" | "INTERVIEWING" | "OFFER";
 
 interface Application {
-  id: string;
-  company: string;
-  role: string;
-  url: string;
+  id: number;
+  company: string | null;
+  role: string | null;
+  url: string | null;
   stage: Stage;
-  savedAt: string; // ISO date
+  created_at: string;
 }
 
 const STAGES: { key: Stage; label: string }[] = [
@@ -21,12 +21,6 @@ const STAGES: { key: Stage; label: string }[] = [
   { key: "INTERVIEWING", label: "Interviewing" },
   { key: "OFFER", label: "Offer" },
 ];
-
-function daysAgo(n: number): string {
-  const d = new Date();
-  d.setDate(d.getDate() - n);
-  return d.toISOString();
-}
 
 function formatRelative(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -41,16 +35,30 @@ export default function App() {
   const [activeStage, setActiveStage] = useState<Stage>("APPLIED");
   const [isSaving, setIsSaving] = useState(false);
   const [user, setUser] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-  supabase.auth.getUser().then(({ data }) => setUser(data.user));
-}, []);
+    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+    supabase
+      .from("jobs")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (error) setError(error.message);
+        else setApplications(data as Application[]);
+      });
+  }, [user]);
 
   const visible = applications.filter((a) => a.stage === activeStage);
   const inMotionCount = applications.filter((a) => a.stage !== "OFFER").length;
 
   async function handleSaveCurrentPage() {
     setIsSaving(true);
+    setError(null);
     try {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       const {
@@ -58,21 +66,23 @@ export default function App() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Not signed in");
       const { data, error } = await supabase
-      .from("jobs")
-      .insert({
-        user_id: user.id,
-        role: tab?.title ?? "Untitled role",
-        url: tab?.url ?? "",
-        stage: "SAVED",
-      })
-      .select()
+        .from("jobs")
+        .insert({
+          user_id: user.id,
+          role: tab?.title ?? "Untitled role",
+          company: tab?.url ? new URL(tab.url).hostname.replace(/^www\./, "") : null,
+          url: tab?.url ?? "",
+          stage: "SAVED",
+        })
+        .select()
         .single();
-      
+
       if (error) throw error;
-      setApplications((prev) => [data, ...prev]);
-    setActiveStage("SAVED");
+      setApplications((prev) => [data as Application, ...prev]);
+      setActiveStage("SAVED");
     } catch (err) {
       console.error("Error saving current page:", err);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setIsSaving(false);
     }
@@ -111,6 +121,8 @@ export default function App() {
         </span>
       </button>
 
+      {error && <p className="app__error">{error}</p>}
+
       <nav className="app__stages" aria-label="Application stage">
         {STAGES.map((s) => {
           const count = applications.filter((a) => a.stage === s.key).length;
@@ -139,7 +151,7 @@ export default function App() {
               <p className="app__row-company">{a.company}</p>
               <p className="app__row-role">{a.role}</p>
             </div>
-            <p className="app__row-time">{formatRelative(a.savedAt)}</p>
+            <p className="app__row-time">{formatRelative(a.created_at)}</p>
           </li>
         ))}
       </ul>

@@ -4,15 +4,27 @@ import { supabase } from "./popup/lib/supabase";
 // from the "Web application" OAuth client you created in Google Cloud Console.
 const GOOGLE_CLIENT_ID = import.meta.env.WXT_GOOGLE_CLIENT_ID as string;
 
+async function sha256Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 async function signInWithGoogle(): Promise<void> {
   const redirectUri = `https://${browser.runtime.id}.chromiumapp.org`;
+
+  // Google gets the hashed nonce, Supabase gets the raw one — GoTrue verifies
+  // by hashing what we pass it and comparing against the id_token's claim.
+  const nonce = crypto.randomUUID();
+  const hashedNonce = await sha256Hex(nonce);
 
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   authUrl.searchParams.set("client_id", GOOGLE_CLIENT_ID);
   authUrl.searchParams.set("response_type", "id_token");
   authUrl.searchParams.set("redirect_uri", redirectUri);
   authUrl.searchParams.set("scope", "openid email profile");
-  authUrl.searchParams.set("nonce", crypto.randomUUID());
+  authUrl.searchParams.set("nonce", hashedNonce);
 
   const redirectedTo = await browser.identity.launchWebAuthFlow({
     url: authUrl.href,
@@ -33,6 +45,7 @@ async function signInWithGoogle(): Promise<void> {
   const { error } = await supabase.auth.signInWithIdToken({
     provider: "google",
     token: idToken,
+    nonce,
   });
 
   if (error) {
