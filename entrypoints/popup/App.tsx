@@ -1,5 +1,8 @@
 import { useState } from "react";
 import "./App.css";
+import { supabase } from "./lib/supabase";
+import { signInWithGoogle } from "./lib/auth";
+import google from "../../assets/google.svg";
 
 type Stage = "SAVED" | "APPLIED" | "INTERVIEWING" | "OFFER";
 
@@ -37,27 +40,42 @@ export default function App() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [activeStage, setActiveStage] = useState<Stage>("APPLIED");
   const [isSaving, setIsSaving] = useState(false);
+  const [user, setUser] = useState<any>(null);
+
+  useEffect(() => {
+  supabase.auth.getUser().then(({ data }) => setUser(data.user));
+}, []);
 
   const visible = applications.filter((a) => a.stage === activeStage);
   const inMotionCount = applications.filter((a) => a.stage !== "OFFER").length;
 
-  function handleSaveCurrentPage() {
+  async function handleSaveCurrentPage() {
     setIsSaving(true);
-    // Real implementation: read the active tab via chrome.tabs.query,
-    // then insert a row into Supabase for the signed-in user.
-    setTimeout(() => {
-      const newEntry: Application = {
-        id: crypto.randomUUID(),
-        company: "New company",
-        role: document.title || "Untitled role",
-        url: window.location.href,
+    try {
+      const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
+      const {
+      data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not signed in");
+      const { data, error } = await supabase
+      .from("jobs")
+      .insert({
+        user_id: user.id,
+        role: tab?.title ?? "Untitled role",
+        url: tab?.url ?? "",
         stage: "SAVED",
-        savedAt: new Date().toISOString(),
-      };
-      setApplications((prev) => [newEntry, ...prev]);
-      setActiveStage("SAVED");
+      })
+      .select()
+        .single();
+      
+      if (error) throw error;
+      setApplications((prev) => [data, ...prev]);
+    setActiveStage("SAVED");
+    } catch (err) {
+      console.error("Error saving current page:", err);
+    } finally {
       setIsSaving(false);
-    }, 500);
+    }
   }
 
   return (
@@ -67,6 +85,12 @@ export default function App() {
           <span className="app__brand-dot" />
           JobRun
         </div>
+        {!user && (
+          <button onClick={() => signInWithGoogle().then(() => window.location.reload()).catch(console.error)} className="app__google__button" aria-label="Sign in with Google" title="Sign in with Google">
+            <img src={google} alt="Sign in with Google" style={{ width: "16px", height: "16px" }} />
+            Sign in with Google
+          </button>
+        )}
         <button className="app__icon-button" aria-label="Settings" title="Settings">
           <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5">
             <circle cx="10" cy="10" r="2.5" />
