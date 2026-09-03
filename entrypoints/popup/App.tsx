@@ -56,6 +56,19 @@ export default function App() {
   const visible = applications.filter((a) => a.stage === activeStage);
   const inMotionCount = applications.filter((a) => a.stage !== "OFFER").length;
 
+  async function handleStageChange(id: number, stage: Stage) {
+    const previous = applications;
+    setApplications((prev) => prev.map((a) => (a.id === id ? { ...a, stage } : a)));
+    setError(null);
+
+    const { error } = await supabase.from("jobs").update({ stage }).eq("id", id);
+
+    if (error) {
+      setApplications(previous);
+      setError(error.message);
+    }
+  }
+
   async function handleSaveCurrentPage() {
     setIsSaving(true);
     setError(null);
@@ -146,12 +159,26 @@ export default function App() {
           </li>
         )}
         {visible.map((a) => (
-          <li key={a.id} className={`app__row app__row--${a.stage}`}>
+          <li key={a.id} className={`app__row app__row--${a.stage.toLowerCase()}`}>
             <div className="app__row-main">
               <p className="app__row-company">{a.company}</p>
               <p className="app__row-role">{a.role}</p>
             </div>
-            <p className="app__row-time">{formatRelative(a.created_at)}</p>
+            <div className="app__row-meta">
+              <p className="app__row-time">{formatRelative(a.created_at)}</p>
+              <select
+                className="app__row-stage"
+                value={a.stage}
+                onChange={(e) => handleStageChange(a.id, e.target.value as Stage)}
+                aria-label={`Stage for ${a.role ?? "this application"}`}
+              >
+                {STAGES.map((s) => (
+                  <option key={s.key} value={s.key}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </div>
           </li>
         ))}
       </ul>
