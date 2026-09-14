@@ -1,7 +1,9 @@
 import { useState } from "react";
 import "./App.css";
 import { supabase } from "./lib/supabase";
-import { signInWithGoogle } from "./lib/auth";
+import { signInWithGoogle, signOut } from "./lib/auth";
+import { extractJob } from "./lib/extract-job";
+import { normalizeJobUrl } from "./lib/normalize-job-url";
 import google from "../../assets/google.svg";
 
 type Stage = "SAVED" | "APPLIED" | "INTERVIEWING" | "OFFER";
@@ -22,6 +24,9 @@ const STAGES: { key: Stage; label: string }[] = [
   { key: "OFFER", label: "Offer" },
 ];
 
+const ROW_EXIT_MS = 180;
+const UNIQUE_VIOLATION = "23505";
+
 function formatRelative(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
   const days = Math.round(diffMs / (1000 * 60 * 60 * 24));
@@ -30,12 +35,34 @@ function formatRelative(iso: string): string {
   return `${days} days ago`;
 }
 
+function stageIndex(stage: Stage): number {
+  return STAGES.findIndex((s) => s.key === stage);
+}
+
+function stageLabel(stage: Stage): string | undefined {
+  return STAGES.find((s) => s.key === stage)?.label;
+}
+
+function prefersReducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export default function App() {
   const [applications, setApplications] = useState<Application[]>([]);
-  const [activeStage, setActiveStage] = useState<Stage>("APPLIED");
+  const [activeStage, setActiveStage] = useState<Stage>("SAVED");
   const [isSaving, setIsSaving] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [slideFrom, setSlideFrom] = useState<"left" | "right">("right");
+  const [leaving, setLeaving] = useState<{ id: number; to: "left" | "right" } | null>(null);
+  const [arrivedId, setArrivedId] = useState<number | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
+  const [removingId, setRemovingId] = useState<number | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
@@ -56,15 +83,56 @@ export default function App() {
   const visible = applications.filter((a) => a.stage === activeStage);
   const inMotionCount = applications.filter((a) => a.stage !== "OFFER").length;
 
+  function selectStage(next: Stage) {
+    if (next === activeStage) return;
+    setSlideFrom(stageIndex(next) > stageIndex(activeStage) ? "right" : "left");
+    setActiveStage(next);
+    setArrivedId(null);
+  }
+
   async function handleStageChange(id: number, stage: Stage) {
-    const previous = applications;
-    setApplications((prev) => prev.map((a) => (a.id === id ? { ...a, stage } : a)));
+    const from = activeStage;
+    const direction = stageIndex(stage) > stageIndex(from) ? "right" : "left";
     setError(null);
+    setNotice(null);
 
-    const { error } = await supabase.from("jobs").update({ stage }).eq("id", id);
+    const update = supabase.from("jobs").update({ stage }).eq("id", id).then(({ error }) => error);
 
+    setLeaving({ id, to: direction });
+    await wait(prefersReducedMotion() ? 0 : ROW_EXIT_MS);
+    setLeaving(null);
+    setApplications((prev) => prev.map((a) => (a.id === id ? { ...a, stage } : a)));
+    setSlideFrom(direction);
+    setActiveStage(stage);
+    setArrivedId(id);
+
+    const error = await update;
     if (error) {
-      setApplications(previous);
+      setApplications((prev) => prev.map((a) => (a.id === id ? { ...a, stage: from } : a)));
+      setSlideFrom(direction === "right" ? "left" : "right");
+      setActiveStage(from);
+      setArrivedId(null);
+      setError(error.message);
+    }
+  }
+
+  async function handleDelete(id: number) {
+    const removed = applications.find((a) => a.id === id);
+    if (!removed) return;
+    setConfirmDeleteId(null);
+    setError(null);
+    setNotice(null);
+
+    const request = supabase.from("jobs").delete().eq("id", id).then(({ error }) => error);
+
+    setRemovingId(id);
+    await wait(prefersReducedMotion() ? 0 : ROW_EXIT_MS);
+    setRemovingId(null);
+    setApplications((prev) => prev.filter((a) => a.id !== id));
+
+    const error = await request;
+    if (error) {
+      setApplications((prev) => [...prev, removed].sort((a, b) => b.created_at.localeCompare(a.created_at)));
       setError(error.message);
     }
   }
@@ -72,27 +140,42 @@ export default function App() {
   async function handleSaveCurrentPage() {
     setIsSaving(true);
     setError(null);
+    setNotice(null);
     try {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
       const {
-      data: { user },
+        data: { user },
       } = await supabase.auth.getUser();
       if (!user) throw new Error("Not signed in");
+      const url = tab?.url ? normalizeJobUrl(tab.url) : "";
+      const job = tab?.id ? await extractJob(tab.id) : null;
       const { data, error } = await supabase
         .from("jobs")
         .insert({
           user_id: user.id,
-          role: tab?.title ?? "Untitled role",
-          company: tab?.url ? new URL(tab.url).hostname.replace(/^www\./, "") : null,
-          url: tab?.url ?? "",
+          role: job?.role ?? tab?.title ?? "Untitled role",
+          company: job?.company ?? (tab?.url ? new URL(tab.url).hostname.replace(/^www\./, "") : null),
+          url,
           stage: "SAVED",
         })
         .select()
         .single();
 
+      if (error?.code === UNIQUE_VIOLATION) {
+        const existing = applications.find((a) => a.url === url);
+        if (existing) {
+          setNotice(`Already saved in ${stageLabel(existing.stage)}.`);
+          selectStage(existing.stage);
+          setArrivedId(existing.id);
+        } else {
+          setNotice("Already saved.");
+        }
+        return;
+      }
       if (error) throw error;
       setApplications((prev) => [data as Application, ...prev]);
-      setActiveStage("SAVED");
+      selectStage("SAVED");
+      setArrivedId((data as Application).id);
     } catch (err) {
       console.error("Error saving current page:", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -135,37 +218,74 @@ export default function App() {
       </button>
 
       {error && <p className="app__error">{error}</p>}
+      {notice && <p className="app__notice">{notice}</p>}
 
-      <nav className="app__stages" aria-label="Application stage">
+      <nav className="app__stages" aria-label="Application stage" data-active={stageIndex(activeStage)}>
         {STAGES.map((s) => {
           const count = applications.filter((a) => a.stage === s.key).length;
           return (
             <button
               key={s.key}
               className={"app__stage" + (activeStage === s.key ? " app__stage--active" : "")}
-              onClick={() => setActiveStage(s.key)}
+              onClick={() => selectStage(s.key)}
             >
               {s.label}
               <span className="app__stage-count">{count}</span>
             </button>
           );
         })}
+        <span className="app__stages-indicator" aria-hidden="true" />
       </nav>
 
-      <ul className="app__list">
+      <ul key={activeStage} className={`app__list app__list--from-${slideFrom}`}>
         {visible.length === 0 && (
           <li className="app__empty">
-            Nothing here yet. Save a posting to add it to {STAGES.find((s) => s.key === activeStage)?.label.toLowerCase()}.
+            Nothing here yet. Save a posting to add it to {stageLabel(activeStage)?.toLowerCase()}.
           </li>
         )}
         {visible.map((a) => (
-          <li key={a.id} className={`app__row app__row--${a.stage.toLowerCase()}`}>
-            <div className="app__row-main">
+          <li
+            key={a.id}
+            className={[
+              "app__row",
+              `app__row--${a.stage.toLowerCase()}`,
+              leaving?.id === a.id && `app__row--leaving-${leaving.to}`,
+              arrivedId === a.id && "app__row--arrived",
+              removingId === a.id && "app__row--removing",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            <a className="app__row-main" href={a.url || undefined} target="_blank" rel="noreferrer">
               <p className="app__row-company">{a.company}</p>
               <p className="app__row-role">{a.role}</p>
-            </div>
+            </a>
             <div className="app__row-meta">
-              <p className="app__row-time">{formatRelative(a.created_at)}</p>
+              <div className="app__row-top">
+                <p className="app__row-time">{formatRelative(a.created_at)}</p>
+                {confirmDeleteId === a.id ? (
+                  <button
+                    className="app__row-delete app__row-delete--confirm"
+                    onClick={() => handleDelete(a.id)}
+                    onBlur={() => setConfirmDeleteId(null)}
+                    onKeyDown={(e) => e.key === "Escape" && setConfirmDeleteId(null)}
+                    autoFocus
+                  >
+                    Delete?
+                  </button>
+                ) : (
+                  <button
+                    className="app__row-delete"
+                    onClick={() => setConfirmDeleteId(a.id)}
+                    aria-label={`Delete ${a.role ?? "this application"}`}
+                    title="Delete"
+                  >
+                    <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" />
+                    </svg>
+                  </button>
+                )}
+              </div>
               <select
                 className="app__row-stage"
                 value={a.stage}
@@ -185,7 +305,12 @@ export default function App() {
 
       <footer className="app__footer">
         <span className="app__sync-dot" />
-        Synced just now
+        {user ? `Signed in as ${user.email}` : "Not signed in"}
+        {user && (
+          <button className="app__signout" onClick={() => signOut().then(() => window.location.reload())}>
+            Sign out
+          </button>
+        )}
       </footer>
     </div>
   );
