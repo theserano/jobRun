@@ -5,6 +5,7 @@ import { signInWithGoogle, signOut } from "./lib/auth";
 import { extractJob } from "./lib/extract-job";
 import { normalizeJobUrl } from "./lib/normalize-job-url";
 import google from "../../assets/google.svg";
+import { applyTheme, loadTheme, NEXT_THEME, saveTheme, type Theme } from "./lib/theme";
 
 type Stage = "SAVED" | "APPLIED" | "INTERVIEWING" | "OFFER" | "DENIED";
 
@@ -24,6 +25,8 @@ const STAGES: { key: Stage; label: string }[] = [
   { key: "OFFER", label: "Offer" },
   { key: "DENIED", label: "Denied" },
 ];
+
+const THEME_LABELS: Record<Theme, string> = { auto: "Auto", light: "Light", dark: "Dark" };
 
 const ROW_EXIT_MS = 180;
 const UNIQUE_VIOLATION = "23505";
@@ -56,6 +59,7 @@ export default function App() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [activeStage, setActiveStage] = useState<Stage>("SAVED");
   const stagesRef = useRef<HTMLElement>(null);
+  const [theme, setTheme] = useState<Theme>(loadTheme);
   const [isSaving, setIsSaving] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +98,13 @@ export default function App() {
     indicator.style.width = `${tab.offsetWidth}px`;
     indicator.style.transform = `translateX(${tab.offsetLeft}px)`;
   }, [activeStage, applications, user]);
+
+  function cycleTheme() {
+    const next = NEXT_THEME[theme];
+    applyTheme(next);
+    saveTheme(next);
+    setTheme(next);
+  }
 
   function selectStage(next: Stage) {
     if (next === activeStage) return;
@@ -209,10 +220,26 @@ export default function App() {
             Sign in with Google
           </button>
         )}
-        <button className="app__icon-button" aria-label="Settings" title="Settings">
-          <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5">
-            <circle cx="10" cy="10" r="2.5" />
-            <path d="M10 2.5v2M10 15.5v2M17.5 10h-2M4.5 10h-2M15.1 4.9l-1.4 1.4M6.3 13.7l-1.4 1.4M15.1 15.1l-1.4-1.4M6.3 6.3 4.9 4.9" />
+        <button
+          className="app__icon-button"
+          onClick={cycleTheme}
+          aria-label={`Theme: ${THEME_LABELS[theme]}. Switch to ${THEME_LABELS[NEXT_THEME[theme]]}`}
+          title={`Theme: ${THEME_LABELS[theme]}`}
+        >
+          <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            {theme === "light" && (
+              <>
+                <circle cx="10" cy="10" r="2.5" />
+                <path d="M10 2.5v2M10 15.5v2M17.5 10h-2M4.5 10h-2M15.1 4.9l-1.4 1.4M6.3 13.7l-1.4 1.4M15.1 15.1l-1.4-1.4M6.3 6.3 4.9 4.9" />
+              </>
+            )}
+            {theme === "dark" && <path d="M16 12.2A6.5 6.5 0 0 1 7.8 4a6.5 6.5 0 1 0 8.2 8.2Z" />}
+            {theme === "auto" && (
+              <>
+                <circle cx="10" cy="10" r="6.5" />
+                <path d="M10 3.5a6.5 6.5 0 0 1 0 13Z" fill="currentColor" />
+              </>
+            )}
           </svg>
         </button>
       </header>
