@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import "./App.css";
 import { supabase } from "./lib/supabase";
 import { signInWithGoogle, signOut } from "./lib/auth";
@@ -6,7 +6,7 @@ import { extractJob } from "./lib/extract-job";
 import { normalizeJobUrl } from "./lib/normalize-job-url";
 import google from "../../assets/google.svg";
 
-type Stage = "SAVED" | "APPLIED" | "INTERVIEWING" | "OFFER";
+type Stage = "SAVED" | "APPLIED" | "INTERVIEWING" | "OFFER" | "DENIED";
 
 interface Application {
   id: number;
@@ -22,6 +22,7 @@ const STAGES: { key: Stage; label: string }[] = [
   { key: "APPLIED", label: "Applied" },
   { key: "INTERVIEWING", label: "Interviewing" },
   { key: "OFFER", label: "Offer" },
+  { key: "DENIED", label: "Denied" },
 ];
 
 const ROW_EXIT_MS = 180;
@@ -54,6 +55,7 @@ function wait(ms: number): Promise<void> {
 export default function App() {
   const [applications, setApplications] = useState<Application[]>([]);
   const [activeStage, setActiveStage] = useState<Stage>("SAVED");
+  const stagesRef = useRef<HTMLElement>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +83,17 @@ export default function App() {
   }, [user]);
 
   const visible = applications.filter((a) => a.stage === activeStage);
-  const inMotionCount = applications.filter((a) => a.stage !== "OFFER").length;
+  const inMotionCount = applications.filter((a) => a.stage !== "OFFER" && a.stage !== "DENIED").length;
+
+  // Tabs size to their labels, so the indicator follows the active tab's measured box
+  useLayoutEffect(() => {
+    const nav = stagesRef.current;
+    const tab = nav?.querySelector<HTMLElement>(".app__stage--active");
+    const indicator = nav?.querySelector<HTMLElement>(".app__stages-indicator");
+    if (!tab || !indicator) return;
+    indicator.style.width = `${tab.offsetWidth}px`;
+    indicator.style.transform = `translateX(${tab.offsetLeft}px)`;
+  }, [activeStage, applications, user]);
 
   function selectStage(next: Stage) {
     if (next === activeStage) return;
@@ -220,7 +232,7 @@ export default function App() {
       {error && <p className="app__error">{error}</p>}
       {notice && <p className="app__notice">{notice}</p>}
 
-      <nav className="app__stages" aria-label="Application stage" data-active={stageIndex(activeStage)}>
+      <nav ref={stagesRef} className="app__stages" aria-label="Application stage">
         {STAGES.map((s) => {
           const count = applications.filter((a) => a.stage === s.key).length;
           return (

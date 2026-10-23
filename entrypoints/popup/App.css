@@ -10,6 +10,7 @@
   --color-primary-soft: #e4f0ec;
   --color-amber: #e2a63b;
   --color-slate: #5b7fa6;
+  --color-red: #c2412d;
 }
 
 * {
@@ -22,7 +23,7 @@ body {
 }
 
 .app {
-  width: 360px;
+  width: 400px;
   max-height: 560px;
   display: flex;
   flex-direction: column;
@@ -127,17 +128,17 @@ body {
 .app__stages {
   position: relative;
   display: flex;
-  padding: 0 18px;
+  padding: 0 14px;
   border-bottom: 1px solid var(--color-border);
-  gap: 4px;
+  gap: 2px;
 }
 
 .app__stage {
   border: none;
   background: transparent;
-  padding: 8px 4px 10px;
+  padding: 8px 2px 10px;
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--color-ink-soft);
   cursor: pointer;
@@ -147,7 +148,7 @@ body {
   gap: 5px;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  flex: 1;
+  flex: 1 1 auto;
   transition: color 180ms ease;
 }
 
@@ -155,28 +156,18 @@ body {
   color: var(--color-ink);
 }
 
-/* 4 equal tabs: width = (content width - 3 gaps) / 4; translate % is the indicator's own width */
+/* Width and position are set from the active tab in App.tsx */
 .app__stages-indicator {
   position: absolute;
-  left: 18px;
+  left: 0;
   bottom: -1px;
-  width: calc((100% - 36px - 12px) / 4);
+  width: 0;
   height: 2px;
   border-radius: 2px;
   background: var(--color-primary);
-  transition: transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-.app__stages[data-active="1"] .app__stages-indicator {
-  transform: translateX(calc(100% + 4px));
-}
-
-.app__stages[data-active="2"] .app__stages-indicator {
-  transform: translateX(calc(200% + 8px));
-}
-
-.app__stages[data-active="3"] .app__stages-indicator {
-  transform: translateX(calc(300% + 12px));
+  transition:
+    transform 260ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    width 260ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 .app__stage-count {
@@ -286,6 +277,10 @@ body {
 
 .app__row--offer {
   border-left-color: var(--color-primary);
+}
+
+.app__row--denied {
+  border-left-color: var(--color-red);
 }
 
 .app__row-main {
