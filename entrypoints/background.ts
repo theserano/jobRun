@@ -10,8 +10,19 @@ const UNIQUE_VIOLATION = "23505";
 
 export type DetectionResult =
   | { status: "moved"; id: number; role: string | null; company: string | null }
-  | { status: "unsaved" }
+  | { status: "unsaved"; job: ExtractedJob | null }
   | { status: "ignored" };
+
+// The job a tab is in the middle of applying to: the URLs it was seen at (job page first)
+// and the details read while the posting was still on screen. A confirmation screen often
+// has neither, so it's matched against this.
+interface PendingApplication {
+  urls: string[];
+  job: ExtractedJob | null;
+  at: number;
+}
+
+const PENDING_TTL_MS = 2 * 60 * 60 * 1000;
 
 interface SenderTab {
   id?: number;
@@ -80,21 +91,96 @@ async function setBadge(tabId: number | undefined, text: string) {
   await browser.action.setBadgeText({ tabId, text });
 }
 
-async function handleApplicationSubmitted(pageUrl: string, tab: SenderTab | undefined): Promise<DetectionResult> {
-  if (!(await currentUserId())) return { status: "ignored" };
+const pendingKey = (tabId: number) => `pending:${tabId}`;
 
-  const keys = new Set([pageUrl, tab?.url].flatMap((url) => (url ? [jobKey(url)] : [])));
+async function getPending(tabId: number | undefined): Promise<PendingApplication | null> {
+  if (tabId === undefined) return null;
+  const key = pendingKey(tabId);
+  const pending = (await browser.storage.session.get(key))[key] as PendingApplication | undefined;
+  return pending && Date.now() - pending.at < PENDING_TTL_MS ? pending : null;
+}
+
+async function clearPending(tabId: number | undefined) {
+  if (tabId !== undefined) await browser.storage.session.remove(pendingKey(tabId));
+}
+
+async function findJob(urls: (string | undefined)[]) {
+  const keys = new Set(urls.flatMap((url) => (url ? [jobKey(url)] : [])));
   const { data, error } = await supabase.from("jobs").select("id, url, stage, role, company");
   if (error) throw error;
+  return data.find((j) => j.url && keys.has(jobKey(j.url))) ?? null;
+}
 
-  const job = data.find((j) => j.url && keys.has(jobKey(j.url)));
-  if (!job) return { status: "unsaved" };
-  if (job.stage !== "SAVED") return { status: "ignored" };
+// In an embedded application form, the tab's URL is the company's own job page.
+function jobUrlFor(pageUrl: string, tab: SenderTab | undefined, inFrame: boolean, pending: PendingApplication | null) {
+  if (pending?.urls[0]) return jobPageUrl(pending.urls[0]);
+  return inFrame && tab?.url ? normalizeJobUrl(tab.url) : jobPageUrl(pageUrl);
+}
 
-  const { error: updateError } = await supabase.from("jobs").update({ stage: "APPLIED" }).eq("id", job.id);
+async function insertJob(url: string, job: ExtractedJob | null, tab: SenderTab | undefined, stage: string) {
+  const userId = await currentUserId();
+  if (!userId) throw new Error("Sign in to JobRun first");
+  const { error } = await supabase.from("jobs").insert({
+    user_id: userId,
+    role: job?.role ?? tab?.title ?? "Untitled role",
+    company: job?.company ?? new URL(url).hostname.replace(/^www\./, ""),
+    url,
+    stage,
+  });
+  return error;
+}
+
+// Opening an application or pressing Submit. Remembers the job for the confirmation screen,
+// and says whether to offer tracking it (signed in, not yet tracked, not already offered).
+async function recordApplyIntent(
+  pageUrl: string,
+  job: ExtractedJob | null,
+  tab: SenderTab | undefined,
+  inFrame: boolean,
+  offer: boolean,
+): Promise<{ offer: boolean }> {
+  if (tab?.id === undefined) return { offer: false };
+
+  const seenAt = inFrame && tab.url ? [tab.url, pageUrl] : [pageUrl];
+  const previous = await getPending(tab.id);
+  const pending: PendingApplication = {
+    urls: [...new Set([...(previous?.urls ?? []), ...seenAt])],
+    job: previous?.job?.role ? previous.job : job,
+    at: Date.now(),
+  };
+  await browser.storage.session.set({ [pendingKey(tab.id)]: pending });
+
+  if (!offer || !(await currentUserId())) return { offer: false };
+  const key = jobKey(pending.urls[0] ?? pageUrl);
+  const { offered = [] } = (await browser.storage.session.get("offered")) as { offered?: string[] };
+  if (offered.includes(key) || (await findJob(pending.urls))) return { offer: false };
+  await browser.storage.session.set({ offered: [...offered, key] });
+  return { offer: true };
+}
+
+async function saveJob(pageUrl: string, job: ExtractedJob | null, tab: SenderTab | undefined, inFrame: boolean) {
+  const pending = await getPending(tab?.id);
+  const error = await insertJob(jobUrlFor(pageUrl, tab, inFrame, pending), pending?.job ?? job, tab, "SAVED");
+  if (error && error.code !== UNIQUE_VIOLATION) throw error;
+}
+
+async function handleApplicationSubmitted(
+  pageUrl: string,
+  job: ExtractedJob | null,
+  tab: SenderTab | undefined,
+): Promise<DetectionResult> {
+  if (!(await currentUserId())) return { status: "ignored" };
+
+  const pending = await getPending(tab?.id);
+  const found = await findJob([pageUrl, tab?.url, ...(pending?.urls ?? [])]);
+  if (!found) return { status: "unsaved", job: pending?.job?.role ? pending.job : job };
+  await clearPending(tab?.id);
+  if (found.stage !== "SAVED") return { status: "ignored" };
+
+  const { error: updateError } = await supabase.from("jobs").update({ stage: "APPLIED" }).eq("id", found.id);
   if (updateError) throw updateError;
   await setBadge(tab?.id, "✓");
-  return { status: "moved", id: job.id, role: job.role, company: job.company };
+  return { status: "moved", id: found.id, role: found.role, company: found.company };
 }
 
 async function undoApplied(id: number, tab: SenderTab | undefined): Promise<void> {
@@ -109,18 +195,8 @@ async function addAsApplied(
   tab: SenderTab | undefined,
   inFrame: boolean,
 ): Promise<void> {
-  const userId = await currentUserId();
-  if (!userId) throw new Error("Sign in to JobRun first");
-
-  // In an embedded application form, the tab's URL is the company's own job page.
-  const url = inFrame && tab?.url ? normalizeJobUrl(tab.url) : jobPageUrl(pageUrl);
-  const { error } = await supabase.from("jobs").insert({
-    user_id: userId,
-    role: job?.role ?? tab?.title ?? "Untitled role",
-    company: job?.company ?? new URL(url).hostname.replace(/^www\./, ""),
-    url,
-    stage: "APPLIED",
-  });
+  const url = jobUrlFor(pageUrl, tab, inFrame, await getPending(tab?.id));
+  const error = await insertJob(url, job, tab, "APPLIED");
 
   if (error?.code === UNIQUE_VIOLATION) {
     const { error: updateError } = await supabase.from("jobs").update({ stage: "APPLIED" }).eq("url", url);
@@ -128,17 +204,24 @@ async function addAsApplied(
   } else if (error) {
     throw error;
   }
+  await clearPending(tab?.id);
   await setBadge(tab?.id, "✓");
 }
 
 export default defineBackground(() => {
+  browser.tabs.onRemoved.addListener((tabId) => clearPending(tabId));
+
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const run = (() => {
       switch (message?.type) {
         case "SIGN_IN_WITH_GOOGLE":
           return signInWithGoogle();
+        case "APPLY_INTENT":
+          return recordApplyIntent(message.url, message.job, sender.tab, sender.frameId !== 0, message.offer);
+        case "SAVE_JOB":
+          return saveJob(message.url, message.job, sender.tab, sender.frameId !== 0);
         case "APPLICATION_SUBMITTED":
-          return handleApplicationSubmitted(message.url, sender.tab);
+          return handleApplicationSubmitted(message.url, message.job, sender.tab);
         case "UNDO_APPLIED":
           return undoApplied(message.id, sender.tab);
         case "ADD_AS_APPLIED":

@@ -37,6 +37,22 @@ export function extractJobFromPage(): ExtractedJob {
     }
   }
 
+  // LinkedIn's job pages and the search pane's detail view render the top card without JSON-LD.
+  if (location.hostname.endsWith("linkedin.com")) {
+    const text = (selector: string) => clean(document.querySelector(selector)?.textContent);
+    const role = text(
+      ".job-details-jobs-unified-top-card__job-title, .jobs-unified-top-card__job-title, .top-card-layout__title",
+    );
+    if (role) {
+      return {
+        role,
+        company: text(
+          ".job-details-jobs-unified-top-card__company-name, .jobs-unified-top-card__company-name, .topcard__org-name-link",
+        ),
+      };
+    }
+  }
+
   // Greenhouse ships no JSON-LD but titles every job page this way.
   const greenhouse = document.title.match(/^Job Application for (.+) at (.+)$/);
   if (greenhouse) return { role: clean(greenhouse[1]), company: clean(greenhouse[2]) };
