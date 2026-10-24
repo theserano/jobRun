@@ -1,0 +1,20 @@
+<!doctype html>
+<html><head><meta charset="utf-8" /><link rel="stylesheet" href="shared.css" />
+<style>
+  .canvas { width: 1280px; height: 800px; }
+  .copy { position: absolute; left: 80px; top: 230px; width: 380px; }
+  .headline { font-size: 56px; }
+  .lede { font-size: 19px; }
+  .popup-frame { width: 400px; }
+  .light { left: 450px; top: 110px; height: 450px; }
+  .dark { left: 820px; top: 240px; height: 380px; }
+</style></head>
+<body><div class="canvas">
+  <div class="copy">
+    <span class="eyebrow">Your pipeline</span>
+    <h1 class="headline">Know where every job stands.</h1>
+    <p class="lede">Saved, Applied, Interviewing, Offer or Denied. In light, dark, or matching your system.</p>
+  </div>
+  <iframe class="popup-frame light" src="popup.html?theme=light&stage=SAVED" scrolling="no"></iframe>
+  <iframe class="popup-frame dark" src="popup.html?theme=dark&stage=INTERVIEWING" scrolling="no"></iframe>
+</div></body></html>

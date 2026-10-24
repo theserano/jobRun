@@ -1,0 +1,78 @@
+<!doctype html>
+<!-- Static render of the popup with sample data, styled by the real popup CSS. Query: ?theme=light|dark&stage=APPLIED -->
+<html>
+<head>
+<meta charset="utf-8" />
+<link rel="stylesheet" href="../../entrypoints/popup/style.css" />
+<link rel="stylesheet" href="../../entrypoints/popup/App.css" />
+<style>
+  html, body { background: var(--color-bg); }
+  .app { max-height: none; }
+  .app__list, .app__row { animation: none !important; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const params = new URLSearchParams(location.search);
+document.documentElement.dataset.theme = params.get("theme") || "light";
+const active = params.get("stage") || "APPLIED";
+
+const STAGES = [["SAVED", "Saved"], ["APPLIED", "Applied"], ["INTERVIEWING", "Interviewing"], ["OFFER", "Offer"], ["DENIED", "Denied"]];
+const JOBS = [
+  ["SAVED", "Brightline", "Design Engineer", "today"],
+  ["SAVED", "Kestrel Bank", "Senior iOS Engineer", "1 day ago"],
+  ["SAVED", "Lumen Studio", "Brand Designer", "3 days ago"],
+  ["APPLIED", "Northwind Labs", "Senior Product Designer", "today"],
+  ["APPLIED", "Fieldstone", "Frontend Engineer", "2 days ago"],
+  ["APPLIED", "Halcyon Health", "UX Researcher", "5 days ago"],
+  ["APPLIED", "Orbital Freight", "Product Manager", "8 days ago"],
+  ["INTERVIEWING", "Cobalt Systems", "Staff Engineer", "6 days ago"],
+  ["INTERVIEWING", "Meridian", "Product Designer", "12 days ago"],
+  ["OFFER", "Juniper & Co", "Design Lead", "21 days ago"],
+  ["DENIED", "Atlas Robotics", "Senior Designer", "15 days ago"],
+];
+const label = (key) => STAGES.find(([k]) => k === key)[1];
+const inMotion = JOBS.filter(([s]) => s !== "OFFER" && s !== "DENIED").length;
+const themeIcon = document.documentElement.dataset.theme === "dark"
+  ? '<path d="M16 12.2A6.5 6.5 0 0 1 7.8 4a6.5 6.5 0 1 0 8.2 8.2Z" />'
+  : '<circle cx="10" cy="10" r="2.5" /><path d="M10 2.5v2M10 15.5v2M17.5 10h-2M4.5 10h-2M15.1 4.9l-1.4 1.4M6.3 13.7l-1.4 1.4M15.1 15.1l-1.4-1.4M6.3 6.3 4.9 4.9" />';
+
+document.getElementById("root").innerHTML = `
+<div class="app">
+  <header class="app__header">
+    <div class="app__brand"><span class="app__brand-dot"></span>JobRun</div>
+    <button class="app__icon-button"><svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${themeIcon}</svg></button>
+  </header>
+  <section class="app__hero">
+    <p class="app__hero-number">${inMotion}</p>
+    <p class="app__hero-label">applications in motion</p>
+  </section>
+  <button class="app__save-button">Save this page <span class="app__save-plus">+</span></button>
+  <nav class="app__stages">
+    ${STAGES.map(([key, name]) => `<button class="app__stage${key === active ? " app__stage--active" : ""}">${name}<span class="app__stage-count">${JOBS.filter(([s]) => s === key).length}</span></button>`).join("")}
+    <span class="app__stages-indicator"></span>
+  </nav>
+  <ul class="app__list">
+    ${JOBS.filter(([s]) => s === active).map(([stage, company, role, time]) => `
+    <li class="app__row app__row--${stage.toLowerCase()}">
+      <a class="app__row-main"><p class="app__row-company">${company}</p><p class="app__row-role">${role}</p></a>
+      <div class="app__row-meta">
+        <div class="app__row-top"><p class="app__row-time">${time}</p>
+          <button class="app__row-delete"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" /></svg></button>
+        </div>
+        <select class="app__row-stage"><option>${label(stage)}</option></select>
+      </div>
+    </li>`).join("")}
+  </ul>
+</div>`;
+
+document.fonts.ready.then(() => {
+  const tab = document.querySelector(".app__stage--active");
+  const indicator = document.querySelector(".app__stages-indicator");
+  indicator.style.width = `${tab.offsetWidth}px`;
+  indicator.style.transform = `translateX(${tab.offsetLeft}px)`;
+});
+</script>
+</body>
+</html>

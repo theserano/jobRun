@@ -1,0 +1,23 @@
+<!doctype html>
+<html><head><meta charset="utf-8" /><link rel="stylesheet" href="shared.css" />
+<style>
+  .canvas { width: 1400px; height: 560px; }
+  .copy { position: absolute; left: 90px; top: 120px; width: 600px; }
+  .row { display: flex; align-items: center; gap: 16px; }
+  .name { font-family: "Fraunces", serif; font-weight: 600; font-size: 36px; }
+  .headline { font-size: 62px; margin-top: 28px; }
+  .popup-frame { left: 820px; top: 60px; width: 400px; height: 640px; }
+  .toast { left: 560px; top: 452px; font-size: 15px; }
+</style></head>
+<body><div class="canvas">
+  <div class="copy">
+    <div class="row"><img src="mark.svg" width="56" height="56" /><span class="name">JobRun</span></div>
+    <h1 class="headline">Your job search, finally organised.</h1>
+  </div>
+  <iframe class="popup-frame" src="popup.html?theme=light&stage=APPLIED" scrolling="no"></iframe>
+  <div class="toast">
+    <span class="toast__dot"></span>
+    <span>Frontend Engineer at Fieldstone moved to Applied.</span>
+    <span class="toast__action">Undo</span>
+  </div>
+</div></body></html>

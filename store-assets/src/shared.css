@@ -1,0 +1,127 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600&family=IBM+Plex+Sans:wght@400;500;600&display=swap");
+
+:root {
+  --green: #1f6f5c;
+  --green-dark: #185947;
+  --green-soft: #e4f0ec;
+  --ink: #14181f;
+  --ink-soft: #5b6472;
+  --amber: #e2a63b;
+  --paper: #f3f1ea;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { font-family: "IBM Plex Sans", sans-serif; color: var(--ink); overflow: hidden; }
+
+.canvas {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 85% 15%, rgba(31, 111, 92, 0.16), transparent 45%),
+    radial-gradient(circle at 10% 95%, rgba(226, 166, 59, 0.16), transparent 40%),
+    var(--paper);
+}
+
+.eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--green);
+}
+.eyebrow::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--green); }
+
+.headline {
+  font-family: "Fraunces", serif;
+  font-weight: 600;
+  line-height: 1.04;
+  letter-spacing: -0.02em;
+  margin: 18px 0 0;
+}
+.lede { color: var(--ink-soft); line-height: 1.5; margin: 20px 0 0; }
+
+/* Browser window chrome */
+.browser {
+  position: absolute;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 30px 80px rgba(20, 24, 31, 0.18), 0 2px 6px rgba(20, 24, 31, 0.06);
+  overflow: hidden;
+}
+.browser__bar {
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  background: #eef0f3;
+  border-bottom: 1px solid #e1e4e9;
+}
+.browser__dots { display: flex; gap: 7px; }
+.browser__dots span { width: 11px; height: 11px; border-radius: 50%; background: #d3d7de; }
+.browser__url {
+  flex: 1;
+  height: 32px;
+  border-radius: 16px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 13px;
+  color: var(--ink-soft);
+}
+.browser__ext {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: grid;
+  place-items: center;
+  background: #dfe9e5;
+}
+
+/* Fictional job page */
+.page { padding: 34px 44px; }
+.page__company { display: flex; align-items: center; gap: 12px; font-weight: 600; font-size: 15px; }
+.page__logo { width: 34px; height: 34px; border-radius: 9px; background: #2b3a67; }
+.page__title { font-size: 30px; font-weight: 600; margin: 22px 0 8px; letter-spacing: -0.01em; }
+.page__meta { color: var(--ink-soft); font-size: 14px; }
+.page__line { height: 11px; border-radius: 6px; background: #edf0f3; margin-top: 14px; }
+.page__apply {
+  display: inline-block;
+  margin-top: 26px;
+  padding: 12px 22px;
+  border-radius: 8px;
+  background: #2b3a67;
+  color: #fff;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.popup-frame {
+  position: absolute;
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 24px 60px rgba(20, 24, 31, 0.28), 0 0 0 1px rgba(20, 24, 31, 0.06);
+  background: #f7f8fa;
+}
+
+/* Same look as the in-page toast in entrypoints/content.ts */
+.toast {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 13px 13px 18px;
+  border-radius: 12px;
+  background: #14181f;
+  color: #fff;
+  font: 500 16px/1.4 "IBM Plex Sans", sans-serif;
+  box-shadow: 0 14px 34px rgba(20, 24, 31, 0.3);
+}
+.toast__dot { width: 10px; height: 10px; border-radius: 50%; background: #3fb68b; flex: none; }
+.toast__action { padding: 7px 13px; border-radius: 7px; background: #e4f0ec; color: #185947; font-weight: 600; }
+.toast__close { color: #9aa3b0; font-size: 20px; line-height: 1; padding: 0 4px; }
