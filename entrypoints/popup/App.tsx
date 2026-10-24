@@ -1,22 +1,19 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import "./App.css";
-import { supabase } from "./lib/supabase";
-import { signInWithGoogle, signOut } from "./lib/auth";
 import { extractJob } from "./lib/extract-job";
+import {
+  addJob,
+  deleteJob,
+  exportJobs,
+  importJobs,
+  listJobs,
+  onJobsChanged,
+  updateJob,
+  type Job,
+  type Stage,
+} from "./lib/jobs";
 import { normalizeJobUrl } from "./lib/normalize-job-url";
-import google from "../../assets/google.svg";
 import { applyTheme, loadTheme, NEXT_THEME, saveTheme, type Theme } from "./lib/theme";
-
-type Stage = "SAVED" | "APPLIED" | "INTERVIEWING" | "OFFER" | "DENIED";
-
-interface Application {
-  id: number;
-  company: string | null;
-  role: string | null;
-  url: string | null;
-  stage: Stage;
-  created_at: string;
-}
 
 const STAGES: { key: Stage; label: string }[] = [
   { key: "SAVED", label: "Saved" },
@@ -29,7 +26,8 @@ const STAGES: { key: Stage; label: string }[] = [
 const THEME_LABELS: Record<Theme, string> = { auto: "Auto", light: "Light", dark: "Dark" };
 
 const ROW_EXIT_MS = 180;
-const UNIQUE_VIOLATION = "23505";
+// Chrome closes a popup when a file picker opens, so Import runs from this page in a tab.
+const IN_TAB = location.hash === "#tab";
 
 function formatRelative(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -55,36 +53,30 @@ function wait(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export default function App() {
-  const [applications, setApplications] = useState<Application[]>([]);
+  const [applications, setApplications] = useState<Job[]>([]);
   const [activeStage, setActiveStage] = useState<Stage>("SAVED");
   const stagesRef = useRef<HTMLElement>(null);
   const [theme, setTheme] = useState<Theme>(loadTheme);
   const [isSaving, setIsSaving] = useState(false);
-  const [user, setUser] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [slideFrom, setSlideFrom] = useState<"left" | "right">("right");
-  const [leaving, setLeaving] = useState<{ id: number; to: "left" | "right" } | null>(null);
-  const [arrivedId, setArrivedId] = useState<number | null>(null);
-  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
-  const [removingId, setRemovingId] = useState<number | null>(null);
+  const [leaving, setLeaving] = useState<{ id: string; to: "left" | "right" } | null>(null);
+  const [arrivedId, setArrivedId] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const importInput = useRef<HTMLInputElement>(null);
 
+  // The background also writes jobs (when it detects an application), so follow storage live.
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => setUser(data.user));
+    listJobs().then(setApplications).catch((err) => setError(errorMessage(err)));
+    return onJobsChanged(setApplications);
   }, []);
-
-  useEffect(() => {
-    if (!user) return;
-    supabase
-      .from("jobs")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .then(({ data, error }) => {
-        if (error) setError(error.message);
-        else setApplications(data as Application[]);
-      });
-  }, [user]);
 
   const visible = applications.filter((a) => a.stage === activeStage);
   const inMotionCount = applications.filter((a) => a.stage !== "OFFER" && a.stage !== "DENIED").length;
@@ -97,7 +89,7 @@ export default function App() {
     if (!tab || !indicator) return;
     indicator.style.width = `${tab.offsetWidth}px`;
     indicator.style.transform = `translateX(${tab.offsetLeft}px)`;
-  }, [activeStage, applications, user]);
+  }, [activeStage, applications]);
 
   function cycleTheme() {
     const next = NEXT_THEME[theme];
@@ -113,13 +105,13 @@ export default function App() {
     setArrivedId(null);
   }
 
-  async function handleStageChange(id: number, stage: Stage) {
+  async function handleStageChange(id: string, stage: Stage) {
     const from = activeStage;
     const direction = stageIndex(stage) > stageIndex(from) ? "right" : "left";
     setError(null);
     setNotice(null);
 
-    const update = supabase.from("jobs").update({ stage }).eq("id", id).then(({ error }) => error);
+    const update = updateJob(id, { stage }).then(() => null, (err: unknown) => err);
 
     setLeaving({ id, to: direction });
     await wait(prefersReducedMotion() ? 0 : ROW_EXIT_MS);
@@ -135,18 +127,18 @@ export default function App() {
       setSlideFrom(direction === "right" ? "left" : "right");
       setActiveStage(from);
       setArrivedId(null);
-      setError(error.message);
+      setError(errorMessage(error));
     }
   }
 
-  async function handleDelete(id: number) {
+  async function handleDelete(id: string) {
     const removed = applications.find((a) => a.id === id);
     if (!removed) return;
     setConfirmDeleteId(null);
     setError(null);
     setNotice(null);
 
-    const request = supabase.from("jobs").delete().eq("id", id).then(({ error }) => error);
+    const request = deleteJob(id).then(() => null, (err: unknown) => err);
 
     setRemovingId(id);
     await wait(prefersReducedMotion() ? 0 : ROW_EXIT_MS);
@@ -156,7 +148,7 @@ export default function App() {
     const error = await request;
     if (error) {
       setApplications((prev) => [...prev, removed].sort((a, b) => b.created_at.localeCompare(a.created_at)));
-      setError(error.message);
+      setError(errorMessage(error));
     }
   }
 
@@ -166,60 +158,72 @@ export default function App() {
     setNotice(null);
     try {
       const [tab] = await browser.tabs.query({ active: true, currentWindow: true });
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not signed in");
-      const url = tab?.url ? normalizeJobUrl(tab.url) : "";
-      const job = tab?.id ? await extractJob(tab.id) : null;
-      const { data, error } = await supabase
-        .from("jobs")
-        .insert({
-          user_id: user.id,
-          role: job?.role ?? tab?.title ?? "Untitled role",
-          company: job?.company ?? (tab?.url ? new URL(tab.url).hostname.replace(/^www\./, "") : null),
-          url,
-          stage: "SAVED",
-        })
-        .select()
-        .single();
+      if (!tab?.url) throw new Error("This page can't be saved.");
+      const job = tab.id ? await extractJob(tab.id) : null;
+      const { job: saved, existing } = await addJob({
+        role: job?.role ?? tab.title ?? "Untitled role",
+        company: job?.company ?? new URL(tab.url).hostname.replace(/^www\./, ""),
+        url: normalizeJobUrl(tab.url),
+        stage: "SAVED",
+      });
 
-      if (error?.code === UNIQUE_VIOLATION) {
-        const existing = applications.find((a) => a.url === url);
-        if (existing) {
-          setNotice(`Already saved in ${stageLabel(existing.stage)}.`);
-          selectStage(existing.stage);
-          setArrivedId(existing.id);
-        } else {
-          setNotice("Already saved.");
-        }
-        return;
-      }
-      if (error) throw error;
-      setApplications((prev) => [data as Application, ...prev]);
-      selectStage("SAVED");
-      setArrivedId((data as Application).id);
+      if (existing) setNotice(`Already saved in ${stageLabel(saved.stage)}.`);
+      else setApplications((prev) => [saved, ...prev.filter((a) => a.id !== saved.id)]);
+      selectStage(saved.stage);
+      setArrivedId(saved.id);
     } catch (err) {
       console.error("Error saving current page:", err);
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errorMessage(err));
     } finally {
       setIsSaving(false);
     }
   }
 
+  async function handleExport() {
+    setError(null);
+    setNotice(null);
+    try {
+      const blob = new Blob([await exportJobs()], { type: "application/json" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `jobrun-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (err) {
+      setError(errorMessage(err));
+    }
+  }
+
+  async function handleImportClick() {
+    if (IN_TAB) {
+      importInput.current?.click();
+      return;
+    }
+    await browser.tabs.create({ url: browser.runtime.getURL("/popup.html#tab") });
+    window.close();
+  }
+
+  async function handleImportFile(file: File | undefined) {
+    if (!file) return;
+    setError(null);
+    setNotice(null);
+    try {
+      const added = await importJobs(await file.text());
+      setNotice(added === 0 ? "Nothing new to import." : `Imported ${added} ${added === 1 ? "job" : "jobs"}.`);
+    } catch (err) {
+      setError(err instanceof SyntaxError ? "This file isn't a JobRun export." : errorMessage(err));
+    } finally {
+      if (importInput.current) importInput.current.value = "";
+    }
+  }
+
   return (
-    <div className="app">
+    <div className={"app" + (IN_TAB ? " app--tab" : "")}>
       <header className="app__header">
         <div className="app__brand">
           <span className="app__brand-dot" />
           JobRun
         </div>
-        {!user && (
-          <button onClick={() => signInWithGoogle().then(() => window.location.reload()).catch(console.error)} className="app__google__button" aria-label="Sign in with Google" title="Sign in with Google">
-            <img src={google} alt="Sign in with Google" style={{ width: "16px", height: "16px" }} />
-            Sign in with Google
-          </button>
-        )}
         <button
           className="app__icon-button"
           onClick={cycleTheme}
@@ -295,7 +299,7 @@ export default function App() {
               .filter(Boolean)
               .join(" ")}
           >
-            <a className="app__row-main" href={a.url || undefined} target="_blank" rel="noreferrer">
+            <a className="app__row-main" href={a.url} target="_blank" rel="noreferrer">
               <p className="app__row-company">{a.company}</p>
               <p className="app__row-role">{a.role}</p>
             </a>
@@ -344,12 +348,20 @@ export default function App() {
 
       <footer className="app__footer">
         <span className="app__sync-dot" />
-        {user ? `Signed in as ${user.email}` : "Not signed in"}
-        {user && (
-          <button className="app__signout" onClick={() => signOut().then(() => window.location.reload())}>
-            Sign out
-          </button>
-        )}
+        Saved on this device
+        <button className="app__footer-action" onClick={handleExport} title="Download your jobs as a file">
+          Export
+        </button>
+        <button className="app__footer-action" onClick={handleImportClick} title="Add jobs from an export file">
+          Import
+        </button>
+        <input
+          ref={importInput}
+          type="file"
+          accept="application/json,.json"
+          hidden
+          onChange={(e) => handleImportFile(e.target.files?.[0])}
+        />
       </footer>
     </div>
   );

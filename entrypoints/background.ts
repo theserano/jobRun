@@ -1,15 +1,10 @@
-import { supabase } from "./popup/lib/supabase";
 import type { ExtractedJob } from "./popup/lib/extract-job";
 import { jobKey, jobPageUrl } from "./popup/lib/job-key";
+import { addJob, findJob, updateJob, type Stage } from "./popup/lib/jobs";
 import { normalizeJobUrl } from "./popup/lib/normalize-job-url";
 
-// Set WXT_GOOGLE_CLIENT_ID in your .env file — the same Client ID
-// from the "Web application" OAuth client you created in Google Cloud Console.
-const GOOGLE_CLIENT_ID = import.meta.env.WXT_GOOGLE_CLIENT_ID as string;
-const UNIQUE_VIOLATION = "23505";
-
 export type DetectionResult =
-  | { status: "moved"; id: number; role: string | null; company: string | null }
+  | { status: "moved"; id: string; role: string | null; company: string | null }
   | { status: "unsaved"; job: ExtractedJob | null }
   | { status: "ignored" };
 
@@ -28,61 +23,6 @@ interface SenderTab {
   id?: number;
   url?: string;
   title?: string;
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
-  return Array.from(new Uint8Array(digest))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-async function signInWithGoogle(): Promise<void> {
-  const redirectUri = `https://${browser.runtime.id}.chromiumapp.org`;
-
-  // Google gets the hashed nonce, Supabase gets the raw one — GoTrue verifies
-  // by hashing what we pass it and comparing against the id_token's claim.
-  const nonce = crypto.randomUUID();
-  const hashedNonce = await sha256Hex(nonce);
-
-  const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-  authUrl.searchParams.set("client_id", GOOGLE_CLIENT_ID);
-  authUrl.searchParams.set("response_type", "id_token");
-  authUrl.searchParams.set("redirect_uri", redirectUri);
-  authUrl.searchParams.set("scope", "openid email profile");
-  authUrl.searchParams.set("nonce", hashedNonce);
-  authUrl.searchParams.set("prompt", "select_account");
-
-  const redirectedTo = await browser.identity.launchWebAuthFlow({
-    url: authUrl.href,
-    interactive: true,
-  });
-
-  if (!redirectedTo) {
-    throw new Error("Sign-in was cancelled or failed");
-  }
-
-  const params = new URLSearchParams(new URL(redirectedTo).hash.substring(1));
-  const idToken = params.get("id_token");
-
-  if (!idToken) {
-    throw new Error("Google did not return an ID token");
-  }
-
-  const { error } = await supabase.auth.signInWithIdToken({
-    provider: "google",
-    token: idToken,
-    nonce,
-  });
-
-  if (error) {
-    throw error;
-  }
-}
-
-async function currentUserId(): Promise<string | null> {
-  const { data } = await supabase.auth.getUser();
-  return data.user?.id ?? null;
 }
 
 async function setBadge(tabId: number | undefined, text: string) {
@@ -104,34 +44,23 @@ async function clearPending(tabId: number | undefined) {
   if (tabId !== undefined) await browser.storage.session.remove(pendingKey(tabId));
 }
 
-async function findJob(urls: (string | undefined)[]) {
-  const keys = new Set(urls.flatMap((url) => (url ? [jobKey(url)] : [])));
-  const { data, error } = await supabase.from("jobs").select("id, url, stage, role, company");
-  if (error) throw error;
-  return data.find((j) => j.url && keys.has(jobKey(j.url))) ?? null;
-}
-
 // In an embedded application form, the tab's URL is the company's own job page.
 function jobUrlFor(pageUrl: string, tab: SenderTab | undefined, inFrame: boolean, pending: PendingApplication | null) {
   if (pending?.urls[0]) return jobPageUrl(pending.urls[0]);
   return inFrame && tab?.url ? normalizeJobUrl(tab.url) : jobPageUrl(pageUrl);
 }
 
-async function insertJob(url: string, job: ExtractedJob | null, tab: SenderTab | undefined, stage: string) {
-  const userId = await currentUserId();
-  if (!userId) throw new Error("Sign in to JobRun first");
-  const { error } = await supabase.from("jobs").insert({
-    user_id: userId,
+async function insertJob(url: string, job: ExtractedJob | null, tab: SenderTab | undefined, stage: Stage) {
+  return addJob({
     role: job?.role ?? tab?.title ?? "Untitled role",
     company: job?.company ?? new URL(url).hostname.replace(/^www\./, ""),
     url,
     stage,
   });
-  return error;
 }
 
 // Opening an application or pressing Submit. Remembers the job for the confirmation screen,
-// and says whether to offer tracking it (signed in, not yet tracked, not already offered).
+// and says whether to offer tracking it (not yet tracked, not already offered).
 async function recordApplyIntent(
   pageUrl: string,
   job: ExtractedJob | null,
@@ -150,7 +79,7 @@ async function recordApplyIntent(
   };
   await browser.storage.session.set({ [pendingKey(tab.id)]: pending });
 
-  if (!offer || !(await currentUserId())) return { offer: false };
+  if (!offer) return { offer: false };
   const key = jobKey(pending.urls[0] ?? pageUrl);
   const { offered = [] } = (await browser.storage.session.get("offered")) as { offered?: string[] };
   if (offered.includes(key) || (await findJob(pending.urls))) return { offer: false };
@@ -160,8 +89,7 @@ async function recordApplyIntent(
 
 async function saveJob(pageUrl: string, job: ExtractedJob | null, tab: SenderTab | undefined, inFrame: boolean) {
   const pending = await getPending(tab?.id);
-  const error = await insertJob(jobUrlFor(pageUrl, tab, inFrame, pending), pending?.job ?? job, tab, "SAVED");
-  if (error && error.code !== UNIQUE_VIOLATION) throw error;
+  await insertJob(jobUrlFor(pageUrl, tab, inFrame, pending), pending?.job ?? job, tab, "SAVED");
 }
 
 async function handleApplicationSubmitted(
@@ -169,23 +97,19 @@ async function handleApplicationSubmitted(
   job: ExtractedJob | null,
   tab: SenderTab | undefined,
 ): Promise<DetectionResult> {
-  if (!(await currentUserId())) return { status: "ignored" };
-
   const pending = await getPending(tab?.id);
   const found = await findJob([pageUrl, tab?.url, ...(pending?.urls ?? [])]);
   if (!found) return { status: "unsaved", job: pending?.job?.role ? pending.job : job };
   await clearPending(tab?.id);
   if (found.stage !== "SAVED") return { status: "ignored" };
 
-  const { error: updateError } = await supabase.from("jobs").update({ stage: "APPLIED" }).eq("id", found.id);
-  if (updateError) throw updateError;
+  await updateJob(found.id, { stage: "APPLIED" });
   await setBadge(tab?.id, "✓");
   return { status: "moved", id: found.id, role: found.role, company: found.company };
 }
 
-async function undoApplied(id: number, tab: SenderTab | undefined): Promise<void> {
-  const { error } = await supabase.from("jobs").update({ stage: "SAVED" }).eq("id", id);
-  if (error) throw error;
+async function undoApplied(id: string, tab: SenderTab | undefined): Promise<void> {
+  await updateJob(id, { stage: "SAVED" });
   await setBadge(tab?.id, "");
 }
 
@@ -196,14 +120,8 @@ async function addAsApplied(
   inFrame: boolean,
 ): Promise<void> {
   const url = jobUrlFor(pageUrl, tab, inFrame, await getPending(tab?.id));
-  const error = await insertJob(url, job, tab, "APPLIED");
-
-  if (error?.code === UNIQUE_VIOLATION) {
-    const { error: updateError } = await supabase.from("jobs").update({ stage: "APPLIED" }).eq("url", url);
-    if (updateError) throw updateError;
-  } else if (error) {
-    throw error;
-  }
+  const { job: stored, existing } = await insertJob(url, job, tab, "APPLIED");
+  if (existing) await updateJob(stored.id, { stage: "APPLIED" });
   await clearPending(tab?.id);
   await setBadge(tab?.id, "✓");
 }
@@ -214,8 +132,6 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const run = (() => {
       switch (message?.type) {
-        case "SIGN_IN_WITH_GOOGLE":
-          return signInWithGoogle();
         case "APPLY_INTENT":
           return recordApplyIntent(message.url, message.job, sender.tab, sender.frameId !== 0, message.offer);
         case "SAVE_JOB":
