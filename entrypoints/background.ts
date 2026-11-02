@@ -18,6 +18,7 @@ interface PendingApplication {
 }
 
 const PENDING_TTL_MS = 2 * 60 * 60 * 1000;
+const HANDOFF_WINDOW_MS = 30 * 1000;
 
 interface SenderTab {
   id?: number;
@@ -128,6 +129,16 @@ async function addAsApplied(
 
 export default defineBackground(() => {
   browser.tabs.onRemoved.addListener((tabId) => clearPending(tabId));
+
+  // Indeed (and Glassdoor's Easy Apply) and LinkedIn's external Apply open the form in a new
+  // tab. If that tab opens right after an Apply click, it carries the job being applied to.
+  browser.tabs.onCreated.addListener(async (tab) => {
+    if (tab.id === undefined || tab.openerTabId === undefined) return;
+    const pending = await getPending(tab.openerTabId);
+    if (pending && Date.now() - pending.at < HANDOFF_WINDOW_MS) {
+      await browser.storage.session.set({ [pendingKey(tab.id)]: pending });
+    }
+  });
 
   browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const run = (() => {

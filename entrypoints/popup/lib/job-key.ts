@@ -8,6 +8,8 @@ const WORKDAY_HOST = /\.(myworkdayjobs|myworkdaysite)\.com$/;
 // ".../job/<location>/<Title>_<ReqId>" and everything under it (/apply, /apply/applyManually, ...)
 const WORKDAY_JOB_PATH = /^(.*\/(?:job|details)\/(?:.*\/)?[^/]*_([A-Za-z0-9-]+))(?:\/|$)/;
 const SMARTRECRUITERS_JOB_PATH = /^\/[^/]+\/(\d{6,})(?:-|$)/;
+const INDEED_HOST = /(^|\.)indeed\.com$/;
+const GLASSDOOR_HOST = /(^|\.)glassdoor\.(com|co\.uk|ca|com\.au|co\.in)$/;
 
 // The page you saved, its application form and the confirmation screen all
 // reduce to the same key, so a confirmation can be matched to a saved job.
@@ -45,6 +47,16 @@ export function jobKey(raw: string): string {
   if (url.hostname === "jobs.smartrecruiters.com") {
     const id = url.pathname.match(SMARTRECRUITERS_JOB_PATH)?.[1];
     if (id) return `smartrecruiters:${id}`;
+  }
+
+  if (INDEED_HOST.test(url.hostname)) {
+    const id = url.searchParams.get("jk") ?? url.searchParams.get("vjk");
+    if (id) return `indeed:${id}`;
+  }
+
+  if (GLASSDOOR_HOST.test(url.hostname)) {
+    const id = url.searchParams.get("jl") ?? url.searchParams.get("jobListingId");
+    if (id) return `glassdoor:${id}`;
   }
 
   return normalized;

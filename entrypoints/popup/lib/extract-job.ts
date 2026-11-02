@@ -53,6 +53,28 @@ export function extractJobFromPage(): ExtractedJob {
     }
   }
 
+  // Indeed and Glassdoor: header elements first, then their page-title formats.
+  if (/(^|\.)indeed\.com$/.test(location.hostname)) {
+    const text = (selector: string) => clean(document.querySelector(selector)?.textContent);
+    const role = text('[data-testid="jobsearch-JobInfoHeader-title"], h1.jobsearch-JobInfoHeader-title');
+    if (role) {
+      return {
+        role: role.replace(/\s*-\s*job post$/i, ""),
+        company: text('[data-testid="inlineHeader-companyName"], [data-company-name="true"]'),
+      };
+    }
+    const title = document.title.match(/^(.+?) - (.+?) - .+\| Indeed/);
+    if (title) return { role: clean(title[1]), company: clean(title[2]) };
+  }
+
+  if (location.hostname.includes("glassdoor.")) {
+    const text = (selector: string) => clean(document.querySelector(selector)?.textContent);
+    const role = text('[data-test="job-title"]');
+    if (role) return { role, company: text('[data-test="employer-name"]') };
+    const title = document.title.match(/^(.+?) hiring (.+?) Job in /);
+    if (title) return { role: clean(title[2]), company: clean(title[1]) };
+  }
+
   // Greenhouse ships no JSON-LD but titles every job page this way.
   const greenhouse = document.title.match(/^Job Application for (.+) at (.+)$/);
   if (greenhouse) return { role: clean(greenhouse[1]), company: clean(greenhouse[2]) };

@@ -28,6 +28,12 @@ export function normalizeJobUrl(raw: string): string {
     if (id) return `https://www.linkedin.com/jobs/view/${id}`;
   }
 
+  // Search results carry the selected job as vjk; viewjob?jk= is its stable page.
+  if (/(^|\.)indeed\.com$/.test(url.hostname) && url.hostname !== "smartapply.indeed.com") {
+    const id = url.searchParams.get("jk") ?? url.searchParams.get("vjk");
+    if (id) return `https://${url.hostname}/viewjob?jk=${id}`;
+  }
+
   for (const key of [...url.searchParams.keys()]) {
     if (key.startsWith("utm_") || TRACKING_PARAMS.has(key)) url.searchParams.delete(key);
   }

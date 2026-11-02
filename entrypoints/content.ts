@@ -42,7 +42,7 @@ const DIALOG_POLL_MS = 1000;
 const CLICKABLE = 'button, a, [role="button"], input[type="submit"]';
 
 const APPLY_LABEL =
-  /^(easy apply( to .+)?|apply( now| for this (job|position|role)| to this job| manually| here)?|i'?m interested)$/i;
+  /^(easy apply( to .+)?|apply( now| for this (job|position|role)| to this job| manually| here| on (the )?company('s)? (site|website))?|i'?m interested)$/i;
 const SUBMIT_LABEL = /^(submit( your)?( application)?|send application)$/i;
 // Only looked for in content that appears after a submit, never in the page as it loaded.
 const SUCCESS_TEXT =
@@ -53,6 +53,8 @@ const SUCCESS_TEXT =
 function isConfirmationPage(url: URL): boolean {
   if (url.hostname.endsWith("greenhouse.io")) return /\/confirmation\/?$/.test(url.pathname);
   if (url.hostname === "jobs.lever.co") return /\/thanks\/?$/.test(url.pathname);
+  // Indeed Apply, which Glassdoor's Easy Apply also uses.
+  if (url.hostname === "smartapply.indeed.com") return /\/post-apply\/?$/.test(url.pathname);
   return false;
 }
 
@@ -107,6 +109,12 @@ export default defineContentScript({
     "*://*.myworkdaysite.com/*",
     "*://jobs.smartrecruiters.com/*",
     "*://*.linkedin.com/*",
+    "*://*.indeed.com/*",
+    "*://*.glassdoor.com/*",
+    "*://*.glassdoor.co.uk/*",
+    "*://*.glassdoor.ca/*",
+    "*://*.glassdoor.com.au/*",
+    "*://*.glassdoor.co.in/*",
   ],
   allFrames: true,
   main(ctx) {
