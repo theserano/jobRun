@@ -7,6 +7,6 @@ export default defineConfig({
     permissions: ['tabs', 'storage', 'activeTab', 'scripting'],
     name: 'JobRun',
     description: 'A browser extension to track your job applications.',
-    version: '1.0.0',
+    version: '1.0.1',
   },
 });
